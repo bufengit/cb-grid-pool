@@ -9,7 +9,6 @@ from typing import Any
 
 import akshare as ak
 import pandas as pd
-import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -18,7 +17,6 @@ LATEST = DATA / "latest.json"
 OVERRIDES = DATA / "manual_overrides.json"
 
 RISK_PATTERN = re.compile(r"强制?赎回|提前赎回|到期赎回|最后交易日|终止上市|暂停上市|违约|评级下调|信用风险|ST")
-EVENT_PATTERN = re.compile(r"下修|向下修正|回售|赎回")
 
 def clean_number(value: Any) -> float | None:
     if value is None or pd.isna(value): return None
@@ -36,36 +34,40 @@ def load_overrides() -> dict[str, dict[str, Any]]:
     try: return json.loads(OVERRIDES.read_text(encoding="utf-8")).get("bonds", {})
     except (OSError, json.JSONDecodeError): return {}
 
-def fetch_spot() -> list[dict[str, Any]]:
-    """AkShare 的公开可转债行情。字段名偶有变化，因此统一做别名映射。"""
-    frame = ak.bond_zh_hs_cov_spot()
+def fetch_market() -> list[dict[str, Any]]:
+    """读取可转债比价表，并合并基础资料。
+
+    这两个接口都是一次性表格请求。旧版逐只扫描公告（数百次网络请求）会让
+    首次更新非常慢，常常在本地被用户中断，最终页面一直保持空数据。
+    """
+    comparison = ak.bond_cov_comparison()
+    basics = ak.bond_zh_cov()
+    basic_by_code = {
+        str(get(row, "债券代码") or "").zfill(6): row
+        for row in basics.to_dict(orient="records")
+    }
     rows: list[dict[str, Any]] = []
-    for raw in frame.to_dict(orient="records"):
-        code = str(get(raw, "债券代码", "代码", "转债代码") or "").zfill(6)
-        price = clean_number(get(raw, "债券最新价", "转债最新价", "最新价"))
-        if not code or price is None: continue
+    for raw in comparison.to_dict(orient="records"):
+        code = str(get(raw, "转债代码", "债券代码", "代码") or "").zfill(6)
+        price = clean_number(get(raw, "转债最新价", "债券最新价", "最新价"))
+        if not code or price is None:
+            continue
+        basic = basic_by_code.get(code, {})
         rows.append({
             "code": code,
-            "name": str(get(raw, "债券简称", "转债名称", "名称") or code),
-            "stock": str(get(raw, "正股简称", "正股名称") or "—"),
+            "name": str(get(raw, "转债名称", "债券简称", "名称") or code),
+            "stock": str(get(raw, "正股名称", "正股简称") or get(basic, "正股简称") or "—"),
             "price": price,
-            "change": clean_number(get(raw, "债券涨跌幅", "转债涨跌幅", "涨跌幅")),
+            "change": clean_number(get(raw, "转债涨跌幅", "债券涨跌幅", "涨跌幅")),
             "premium": clean_number(get(raw, "转股溢价率")),
             "redeem_price": clean_number(get(raw, "到期赎回价")),
-            "listed_at": str(get(raw, "上市日期") or ""),
+            "rating": get(basic, "信用评级"),
+            # 发行规模不等于剩余规模，不能替代正式池的 balance 字段。
+            "issue_size": clean_number(get(basic, "发行规模")),
+            "listed_at": str(get(raw, "上市日期") or get(basic, "上市时间") or ""),
+            "events": [],
         })
     return rows
-
-def fetch_event_titles(code: str) -> list[str]:
-    """公告标题仅作为风险拦截；网络失败时返回空并交给完整度逻辑处理。"""
-    url = "https://np-anotice-stock.eastmoney.com/api/security/ann"
-    try:
-        response = requests.get(url, params={"page_size": 30, "page_index": 1, "stock_list": code}, timeout=12)
-        payload = response.json()
-        notices = payload.get("data", {}).get("list", [])
-        return [str(x.get("title", "")) for x in notices]
-    except (requests.RequestException, ValueError):
-        return []
 
 def prior_snapshots() -> list[dict[str, Any]]:
     files = sorted(HISTORY.glob("*.json"))[-60:]
@@ -122,7 +124,7 @@ def main() -> None:
     now = datetime.now(timezone.utc)
     overrides = load_overrides(); previous = prior_snapshots()
     try:
-        raw_bonds = fetch_spot(); source_status = "公开行情已更新"; source_note = "AkShare 公开可转债行情；关键字段不足时自动停留在观察区。"
+        raw_bonds = fetch_market(); source_status = "公开行情已更新"; source_note = "已加载可转债实时行情。剩余规模、期限、税后YTM等未核验字段会停留在观察区。"
     except Exception as exc:  # 工作流必须保留旧数据而非清空策略池
         old = json.loads(LATEST.read_text(encoding="utf-8")) if LATEST.exists() else {"bonds": []}
         old.update({"source_status": "本次更新失败，保留上一份结果", "source_note": str(exc)[:160]})
@@ -131,9 +133,6 @@ def main() -> None:
     bonds = []
     for bond in raw_bonds:
         bond.update(overrides.get(bond["code"], {}))
-        titles = fetch_event_titles(bond["code"])
-        # 保留普通事件标签，也必须保留强赎、ST、信用风险等立即移除信号。
-        bond["events"] = [title for title in titles if EVENT_PATTERN.search(title) or RISK_PATTERN.search(title)][:3]
         bonds.append(classify(bond, previous))
     bonds.sort(key=lambda x: (x["status"] != "official", -(x.get("price") or 0)))
     payload = {"generated_at": now.isoformat(), "source_status": source_status, "source_note": source_note,

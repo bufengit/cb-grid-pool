@@ -23,8 +23,22 @@
 
 ## 本地运行
 
+最简单的方式（首次安装依赖、生成数据并启动网页）：
+
 ```bash
-pip install -r requirements.txt
-python scripts/update_pool.py
-python -m http.server 8000
+python3 start_local.py
 ```
+
+网页地址为 `http://127.0.0.1:8000`。终端出现 `Serving HTTP` 是正常状态，
+不是报错；停止时按 `Ctrl + C`。
+
+如果要分开运行：
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 scripts/update_pool.py
+python3 -m http.server 8000
+```
+
+`python3 -m http.server 8000` 只负责展示网页，**不会**自动抓取数据；必须先运行
+`python3 scripts/update_pool.py`，否则页面会一直显示“等待首次更新”。

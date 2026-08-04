@@ -48,7 +48,7 @@
       $(".health").innerHTML = `<i></i>${esc(data.source_status || "等待更新")}`;
       updateCards(data.summary || {}); render();
     } catch (error) {
-      $(".top p:last-child").textContent = "数据尚未生成：请在 GitHub Actions 手动运行一次“更新可转债策略池”。";
+      $(".top p:last-child").textContent = "数据尚未生成：请在项目根目录运行 python3 start_local.py。";
       $("#tbody").innerHTML = ""; $("#empty").hidden = false; $("#detail").innerHTML = "<p class='note'>正在等待首次公开数据更新。页面不会用演示数据代替真实结果。</p>";
     } finally { button.disabled = false; button.textContent = "↻　刷新数据"; }
   }
