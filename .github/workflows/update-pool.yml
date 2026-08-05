@@ -1,0 +1,30 @@
+name: 更新可转债策略池
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 北京时间工作日 16:20（UTC 08:20），收盘后更新
+    - cron: '20 8 * * 1-5'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装数据依赖
+        run: pip install -r requirements.txt
+      - name: 拉取公开数据并运行策略
+        run: python scripts/update_pool.py
+      - name: 提交更新的数据快照
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/latest.json data/history
+          git diff --cached --quiet || git commit -m "data: 更新策略池快照"
+          git push

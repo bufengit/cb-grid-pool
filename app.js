@@ -52,6 +52,16 @@
       $("#tbody").innerHTML = ""; $("#empty").hidden = false; $("#detail").innerHTML = "<p class='note'>正在等待首次公开数据更新。页面不会用演示数据代替真实结果。</p>";
     } finally { button.disabled = false; button.textContent = "↻　刷新数据"; }
   }
+  function openManualUpdate() {
+    const githubPages = location.hostname.endsWith(".github.io");
+    const repo = location.pathname.split("/").filter(Boolean)[0];
+    if (!githubPages || !repo) {
+      alert("请在 GitHub 仓库的 Actions 页面运行“更新可转债策略池”。线上部署后，此按钮会自动打开对应工作流。");
+      return;
+    }
+    const owner = location.hostname.replace(/\.github\.io$/, "");
+    window.open(`https://github.com/${owner}/${repo}/actions/workflows/update-pool.yml`, "_blank", "noopener");
+  }
   const tabs = $("#tabs");
   if (tabs.querySelectorAll("button").length < 5) tabs.insertAdjacentHTML("beforeend", "<button></button>");
   tabs.querySelectorAll("button").forEach((button, index) => {
@@ -60,5 +70,7 @@
     button.onclick = () => { active = button.dataset.state; document.querySelectorAll("#tabs button").forEach((x) => x.classList.remove("active")); button.classList.add("active"); render(); };
   });
   $("#search").oninput = render; $("#sort").onchange = (e) => { sort = e.target.value; render(); };
-  $(".update").onclick = load; load();
+  $(".update").onclick = load;
+  $(".run-update").onclick = openManualUpdate;
+  load();
 })();
