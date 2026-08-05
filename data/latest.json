@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-08-05T07:22:33.719669+00:00",
-  "source_status": "公开行情已更新",
-  "source_note": "已加载可转债实时行情。剩余规模、期限、税后YTM等未核验字段会停留在观察区。",
+  "source_status": "本次更新失败，保留上一份结果",
+  "source_note": "('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))",
   "summary": {
     "total": 304,
     "official": 0,
